@@ -427,40 +427,7 @@ function whenMissiveReady(timeoutMs = 3000) {
 }
 
 async function bootMissive() {
-  // TEMP DEBUG — render an always-visible strip showing what we know about
-  // the Missive global. Useful for finding the right navigation method.
-  // Remove once we know the right name.
-  function dumpDebug(text) {
-    let div = document.getElementById("__dbg");
-    if (!div) {
-      div = document.createElement("div");
-      div.id = "__dbg";
-      div.style.cssText = "padding:6px 10px;font:10px ui-monospace,monospace;background:#fffbcc;color:#222;border-bottom:2px solid #e3c500;word-break:break-all;white-space:pre-wrap;max-height:140px;overflow:auto";
-      document.body.insertBefore(div, document.body.firstChild);
-    }
-    div.textContent = text;
-  }
-  dumpDebug("Boot starting at " + new Date().toISOString());
-
   await whenMissiveReady();
-
-  try {
-    const M = window.Missive;
-    if (!M) {
-      dumpDebug("window.Missive is undefined after wait. (Standalone? Or Missive didn't inject the SDK.)");
-    } else {
-      const keys = Object.keys(M);
-      const proto = Object.getPrototypeOf(M);
-      const protoKeys = proto ? Object.getOwnPropertyNames(proto).filter(k => typeof M[k] === "function") : [];
-      const allFns = [...new Set([...keys, ...protoKeys])].filter(k => typeof M[k] === "function");
-      dumpDebug(
-        "Missive own keys (" + keys.length + "): " + keys.join(", ") + "\n" +
-        "Functions on M (" + allFns.length + "): " + allFns.join(", ")
-      );
-    }
-  } catch (e) {
-    dumpDebug("Missive inspect failed: " + e.message);
-  }
 
   // Org users (for @-name resolution AND for resolving "me" by email).
   try {
@@ -647,24 +614,9 @@ async function renameTask(id, newTitle) {
   }
 }
 
-// Open a Missive conversation. The JS API exposes different method names in
-// different versions, so try them in order.
 function navigateToConversation(cid) {
   if (!cid || !window.Missive) return;
-  const candidates = ["openConversation", "openConversations", "selectConversation", "selectConversations"];
-  for (const name of candidates) {
-    const fn = Missive[name];
-    if (typeof fn !== "function") continue;
-    try {
-      // Some take a single id, some take an array. Try the array shape first
-      // since it works for both per-Missive convention.
-      const res = fn.length >= 1 ? fn.call(Missive, [cid]) : fn.call(Missive, cid);
-      return res;
-    } catch (_) {
-      try { return fn.call(Missive, cid); } catch (__) {}
-    }
-  }
-  console.warn("No Missive method found to open a conversation. Tried:", candidates);
+  Missive.navigate({ conversationId: cid });
 }
 
 // ---------- UI helpers -----------------------------------------------------
