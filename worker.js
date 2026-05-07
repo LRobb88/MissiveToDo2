@@ -266,10 +266,10 @@ export default {
         return json({ error: "forbidden origin" }, 403, cors);
       }
 
+      // The user-email header is best-effort: it lets us filter tasks by
+      // "me" when present, but is NOT required for auth (the bearer token
+      // already authenticated the caller).
       const userEmail = req.headers.get("x-missive-user-email") || "";
-      if (!userEmail) {
-        return json({ error: "missing x-missive-user-email" }, 401, cors);
-      }
 
       // GET /api/users
       if (url.pathname === "/api/users" && req.method === "GET") {

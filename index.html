@@ -321,6 +321,10 @@ import { parseShortcut, decorateTitle } from "./parser.js";
 const params = new URLSearchParams(location.search);
 const API_BASE = params.get("api") || "";
 const API_TOKEN = params.get("token") || "";
+// Optional: pin the current user when Missive's JS API doesn't expose a
+// fetch-current-user method. Each teammate uses an integration URL with
+// their own &me=email@x.com value baked in.
+const ME_EMAIL_OVERRIDE = params.get("me") || "";
 
 // ---------- State ----------------------------------------------------------
 const state = {
@@ -349,23 +353,54 @@ function whenMissiveReady() {
 async function bootMissive() {
   await whenMissiveReady();
 
-  // Current user
-  try {
-    const ctx = await Missive.fetchUserContext();
-    state.me = { id: ctx.user.id, name: ctx.user.name, email: ctx.user.email };
-    document.getElementById("userBadge").textContent = state.me.name.split(" ")[0];
-  } catch (e) {
-    document.getElementById("userBadge").textContent = "?";
-    console.warn("fetchUserContext failed", e);
-  }
-
-  // Org users (for @-name resolution)
+  // Org users (for @-name resolution AND for resolving "me" by email).
   try {
     const users = await Missive.fetchUsers();
     state.users = (users || []).map(u => ({ id: u.id, name: u.name, email: u.email }));
   } catch (e) {
     console.warn("fetchUsers failed", e);
   }
+
+  // Current user — Missive's JS API doesn't expose a single canonical method
+  // for this, and the names vary across versions. Try the candidates we've
+  // seen in the wild, and fall back to ME_EMAIL_OVERRIDE from the URL.
+  state.me = await resolveCurrentUser();
+  document.getElementById("userBadge").textContent =
+    state.me ? state.me.name.split(" ")[0] : "?";
+  if (!state.me) {
+    console.warn("Could not determine current Missive user. Add &me=you@x.com to the integration URL.");
+  }
+}
+
+async function resolveCurrentUser() {
+  // 1) Try a handful of known-or-possible Missive JS API methods.
+  const candidates = [
+    "fetchUserContext", "fetchCurrentUser", "fetchMe", "fetchUser", "fetchSelf",
+  ];
+  for (const name of candidates) {
+    if (typeof Missive[name] !== "function") continue;
+    try {
+      const r = await Missive[name]();
+      const u = r?.user || r?.current_user || r;
+      if (u && u.email) return { id: u.id, name: u.name || u.email, email: u.email };
+    } catch (_) { /* keep trying */ }
+  }
+  // 2) Some versions expose a sync property.
+  for (const key of ["user", "currentUser", "me"]) {
+    const u = Missive[key];
+    if (u && u.email) return { id: u.id, name: u.name || u.email, email: u.email };
+  }
+  // 3) URL-baked override: &me=you@x.com — match against fetched users to
+  //    pick up id/name as well.
+  if (ME_EMAIL_OVERRIDE) {
+    const match = state.users.find(
+      u => (u.email || "").toLowerCase() === ME_EMAIL_OVERRIDE.toLowerCase()
+    );
+    if (match) return match;
+    return { id: null, name: ME_EMAIL_OVERRIDE.split("@")[0], email: ME_EMAIL_OVERRIDE };
+  }
+  return null;
+}
 
   // Conversation context — refresh whenever selection changes.
   Missive.on("change:conversations", async (ids) => {
