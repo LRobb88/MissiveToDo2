@@ -15,6 +15,8 @@
 //   MISSIVE_API_TOKEN     - personal API token for the Missive org
 //   MISSIVE_TEAM_ID       - default team UUID for tasks created without an
 //                           explicit assignee
+//   MISSIVE_ORG_ID        - organization UUID; required by Missive whenever
+//                           team or assignees is set on a non-subtask
 //   SIDEBAR_TOKEN         - shared secret the sidebar passes as
 //                           `Authorization: Bearer <token>`. This is the
 //                           ACTUAL auth boundary on /api/*; CORS Origin is
@@ -125,13 +127,21 @@ async function handleCreateTask(env, userEmail, body, cors) {
     status: "todo",
   };
   if (body.due_at)            payload.due_at    = body.due_at;
-  if (body.assignees?.length) payload.assignees = body.assignees;
-  else                        payload.team      = env.MISSIVE_TEAM_ID;
+  if (body.assignees?.length) {
+    payload.assignees = body.assignees;
+    // Missive requires organization when assignees is set on a non-subtask.
+    if (env.MISSIVE_ORG_ID) payload.organization = env.MISSIVE_ORG_ID;
+  } else {
+    payload.team = env.MISSIVE_TEAM_ID;
+    // Missive requires organization whenever team is set.
+    if (env.MISSIVE_ORG_ID) payload.organization = env.MISSIVE_ORG_ID;
+  }
   if (body.conversation_id) {
     payload.subtask = true;
     payload.conversation = body.conversation_id;
-    // Subtasks don't take `team`; remove it if we set it above.
+    // Subtasks don't take team/organization; they inherit from the convo.
     delete payload.team;
+    delete payload.organization;
   }
   const created = await missiveFetch(env, "/tasks", {
     method: "POST",
