@@ -132,13 +132,12 @@ async function handleListTasks(env, userEmail, params, cors) {
 }
 
 async function handleCreateTask(env, userEmail, body, cors) {
-  // Stash subject + conversation ID in description so they survive the list
-  // API, which doesn't always return the conversation relationship on tasks.
+  // Stash the convo subject inside description so we can show "📧 subject"
+  // on task rows later — Missive's task model doesn't carry it natively.
   const subjectTag = body.convo_subject ? `\n[convo: ${body.convo_subject}]` : "";
-  const convIdTag  = body.conversation_id ? `\n[conv_id: ${body.conversation_id}]` : "";
   const payload = {
     title: body.title || "(untitled)",
-    description: (body.description || "") + subjectTag + convIdTag,
+    description: (body.description || "") + subjectTag,
     status: "todo",
   };
   if (body.due_at)            payload.due_at    = body.due_at;
@@ -171,21 +170,37 @@ async function handlePatchTask(env, id, body, cors) {
   if (body.status) payload.status = body.status;       // todo|in_progress|closed
   if (body.title)  payload.title  = body.title;
   if (body.due_at !== undefined) payload.due_at = body.due_at;
-  const r = await missiveFetch(env, "/tasks/" + encodeURIComponent(id), {
-    method: "PATCH",
-    body: JSON.stringify({ tasks: payload }),
-  });
-  return json({ task: normalizeTask(r.tasks || r.task || r) }, 200, cors);
+
+  // Missive's task update endpoint shape isn't in the public docs, so try
+  // a few likely combinations until one is accepted. Whichever works wins.
+  const attempts = [
+    { method: "PATCH", path: `/tasks/${encodeURIComponent(id)}`, body: { tasks: payload } },
+    { method: "PATCH", path: `/tasks/${encodeURIComponent(id)}`, body: { task:  payload } },
+    { method: "POST",  path: `/tasks/${encodeURIComponent(id)}`, body: { tasks: payload } },
+    { method: "PATCH", path: `/tasks/${encodeURIComponent(id)}`, body: payload },
+    { method: "PATCH", path: `/tasks`,                            body: { tasks: { id, ...payload } } },
+  ];
+  let lastErr;
+  for (const a of attempts) {
+    try {
+      const r = await missiveFetch(env, a.path, {
+        method: a.method,
+        body: JSON.stringify(a.body),
+      });
+      return json({ task: normalizeTask(r.tasks || r.task || r), shape: `${a.method} ${a.path} ${Object.keys(a.body).join(",")}` }, 200, cors);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("All update attempts failed");
 }
 
 function normalizeTask(t) {
   // Pull the [convo: …] line out of description so the sidebar can show it
   // separately. Match is permissive — leading/trailing whitespace OK.
   const desc = t.description || "";
-  const m    = desc.match(/\[convo:\s*([^\]]+)\]/);
-  const mId  = desc.match(/\[conv_id:\s*([^\]]+)\]/);
-  const convoSubject  = m   ? m[1].trim()   : null;
-  const storedConvId  = mId ? mId[1].trim() : null;
+  const m = desc.match(/\[convo:\s*([^\]]+)\]/);
+  const convoSubject = m ? m[1].trim() : null;
   return {
     id: t.id,
     title: t.title,
@@ -193,7 +208,7 @@ function normalizeTask(t) {
     status: t.status || "todo",
     due_at: t.due_at || null,
     assignees: (t.assignees || []).map(a => ({ id: a.id, name: a.name, email: a.email })),
-    conversation_id: t.conversation?.id || t.conversation_id || storedConvId || null,
+    conversation_id: t.conversation?.id || t.conversation_id || null,
     convo_subject: t.conversation?.subject || convoSubject || null,
     created_at: t.created_at || null,
     closed_at: t.closed_at || null,
@@ -236,11 +251,7 @@ async function handleWebhook(env, body) {
 
   const payload = {
     title,
-    description: [
-      `Created from comment in ${subject}.`,
-      `[convo: ${subject}]`,
-      conversation.id ? `[conv_id: ${conversation.id}]` : "",
-    ].filter(Boolean).join("\n"),
+    description: `Created from comment in ${conversation.subject || "(conversation)"}.`,
     status: "todo",
     subtask: true,
     conversation: conversation.id,
@@ -267,11 +278,6 @@ export default {
     }
 
     try {
-      // ---- Static assets (sidebar HTML + parser.js) ----------------------
-      if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
-        return env.ASSETS.fetch(req);
-      }
-
       // ---- Webhook (no CORS, signature-validated) ------------------------
       if (url.pathname === "/webhook/missive" && req.method === "POST") {
         const raw = await req.text();
