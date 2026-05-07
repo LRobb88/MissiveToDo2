@@ -423,18 +423,29 @@ function whenMissiveReady() {
 }
 
 async function bootMissive() {
+  // TEMP DEBUG — render an always-visible strip showing what we know about
+  // the Missive global. Useful for finding the right navigation method.
+  // Remove once we know the right name.
+  function dumpDebug(text) {
+    let div = document.getElementById("__dbg");
+    if (!div) {
+      div = document.createElement("div");
+      div.id = "__dbg";
+      div.style.cssText = "padding:6px 10px;font:10px ui-monospace,monospace;background:#fffbcc;color:#222;border-bottom:2px solid #e3c500;word-break:break-all;white-space:pre-wrap;max-height:140px;overflow:auto";
+      document.body.insertBefore(div, document.body.firstChild);
+    }
+    div.textContent = text;
+  }
+  dumpDebug("Boot starting at " + new Date().toISOString());
+
   await whenMissiveReady();
 
-  // TEMP DEBUG — dump Missive's public surface to a strip in the sidebar so
-  // we can see which conversation-opening method is actually available.
-  // Remove once we know the right name.
   try {
-    const keys = Object.keys(Missive);
-    const div = document.createElement("div");
-    div.style.cssText = "padding:6px 12px;font:10px ui-monospace,monospace;background:#fffbcc;color:#222;border-bottom:1px solid #e3c500;word-break:break-all";
-    div.textContent = "Missive keys: " + keys.join(", ");
-    document.body.insertBefore(div, document.body.firstChild);
-  } catch (_) {}
+    const keys = Object.keys(window.Missive || {});
+    dumpDebug("Missive keys (" + keys.length + "): " + keys.join(", "));
+  } catch (e) {
+    dumpDebug("Missive inspect failed: " + e.message);
+  }
 
   // Org users (for @-name resolution AND for resolving "me" by email).
   try {
