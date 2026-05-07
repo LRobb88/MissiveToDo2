@@ -370,6 +370,23 @@ async function bootMissive() {
   if (!state.me) {
     console.warn("Could not determine current Missive user. Add &me=you@x.com to the integration URL.");
   }
+
+  // Conversation context — refresh whenever selection changes.
+  Missive.on("change:conversations", async (ids) => {
+    if (!ids || ids.length !== 1) {
+      state.convoId = null;
+      state.convoSubject = "";
+    } else {
+      try {
+        const convos = await Missive.fetchConversations(ids);
+        if (convos && convos[0]) {
+          state.convoId = convos[0].id;
+          state.convoSubject = convos[0].subject || convos[0].latest_message?.subject || "";
+        }
+      } catch (e) { console.warn(e); }
+    }
+    render();
+  });
 }
 
 async function resolveCurrentUser() {
@@ -400,24 +417,6 @@ async function resolveCurrentUser() {
     return { id: null, name: ME_EMAIL_OVERRIDE.split("@")[0], email: ME_EMAIL_OVERRIDE };
   }
   return null;
-}
-
-  // Conversation context — refresh whenever selection changes.
-  Missive.on("change:conversations", async (ids) => {
-    if (!ids || ids.length !== 1) {
-      state.convoId = null;
-      state.convoSubject = "";
-    } else {
-      try {
-        const convos = await Missive.fetchConversations(ids);
-        if (convos && convos[0]) {
-          state.convoId = convos[0].id;
-          state.convoSubject = convos[0].subject || convos[0].latest_message?.subject || "";
-        }
-      } catch (e) { console.warn(e); }
-    }
-    render();
-  });
 }
 
 // ---------- API client -----------------------------------------------------
