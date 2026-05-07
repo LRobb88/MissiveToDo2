@@ -459,10 +459,18 @@ async function loadTasks() {
 
 async function createTask(parsed, titleFallback) {
   const title = decorateTitle(parsed.title || titleFallback || "(untitled)", parsed.priority);
+  // Default-assign to me when there's no explicit @mention and no
+  // conversation context to make the task a subtask of. This keeps tasks
+  // showing up under the right person and avoids the "team or assignee
+  // required" error from Missive's REST API on standalone tasks.
+  let assigneeIds = parsed.assignees.map(u => u.id);
+  if (!assigneeIds.length && !state.convoId && state.me?.id) {
+    assigneeIds = [state.me.id];
+  }
   const body = {
     title,
     due_at: parsed.dueAt,
-    assignees: parsed.assignees.map(u => u.id),
+    assignees: assigneeIds,
     priority: parsed.priority,
     conversation_id: state.convoId || null,
   };
