@@ -268,6 +268,36 @@
     outline: none;
   }
   .task.archived { opacity: 0.65; }
+  .snooze-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-top: 5px;
+    flex-wrap: wrap;
+  }
+  .snooze-row button {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .snooze-row button:hover { background: var(--bg-hover); }
+  .snooze-row button.snooze-clear { color: var(--danger); }
+  .snooze-row input[type="date"] {
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg-soft);
+    color: var(--text);
+    font-size: 11px;
+    outline: none;
+    max-width: 130px;
+  }
+  .snooze-row input[type="date"]:focus { border-color: var(--accent); }
   .toast {
     position: fixed;
     bottom: 12px;
@@ -406,7 +436,8 @@ const state = {
   tasks:     [],             // ALL tasks for me — open and closed
   activeTab: "today",
   searchQuery: "",
-  editingId: null,           // task id currently being inline-edited
+  editingId:  null,          // task id currently being inline-edited
+  snoozingId: null,          // task id whose snooze row is open
 };
 
 // ---------- Missive bridge -------------------------------------------------
@@ -589,6 +620,38 @@ async function setTaskClosed(id, closed) {
   render();
 }
 
+function quickDueAt(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  d.setHours(offsetDays === 0 ? 17 : 9, 0, 0, 0);
+  return Math.floor(d.getTime() / 1000);
+}
+
+function dateStrToTimestamp(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + "T09:00:00");
+  return isNaN(d.getTime()) ? null : Math.floor(d.getTime() / 1000);
+}
+
+async function setTaskDueAt(id, dueAt) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!t) return;
+  const prev = t.due_at;
+  t.due_at = dueAt;
+  state.snoozingId = null;
+  render();
+  try {
+    await api("/api/tasks/" + encodeURIComponent(id), {
+      method: "PATCH",
+      body: JSON.stringify({ due_at: dueAt }),
+    });
+  } catch (e) {
+    t.due_at = prev;
+    toast("Update failed: " + e.message);
+    render();
+  }
+}
+
 async function renameTask(id, newTitle) {
   const trimmed = (newTitle || "").trim();
   if (!trimmed) return;
@@ -733,7 +796,29 @@ function bindTaskRows() {
     el.querySelector(".btn-edit")?.addEventListener("click", (e) => {
       e.stopPropagation();
       state.editingId = id;
+      state.snoozingId = null;
       render();
+    });
+    el.querySelector(".btn-snooze")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.snoozingId = state.snoozingId === id ? null : id;
+      state.editingId = null;
+      render();
+    });
+    el.querySelectorAll(".snooze-quick").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setTaskDueAt(id, parseInt(btn.dataset.at, 10));
+      });
+    });
+    el.querySelector(".snooze-clear")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setTaskDueAt(id, null);
+    });
+    el.querySelector(".snooze-date")?.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const ts = dateStrToTimestamp(e.target.value);
+      if (ts !== null) setTaskDueAt(id, ts);
     });
     // Click anywhere else on the row navigates to the conversation (if any).
     el.addEventListener("click", () => {
@@ -757,12 +842,26 @@ function taskRow(t) {
     ? `<div class="convo-subject" title="${escapeHTML(t.convo_subject)}">📧 ${escapeHTML(t.convo_subject)}</div>`
     : "";
 
+  const snoozeDateStr = t.due_at
+    ? new Date(t.due_at * 1000).toLocaleDateString("en-CA")
+    : "";
+  const snoozeRow = (!editing && state.snoozingId === t.id)
+    ? `<div class="snooze-row">
+        <button class="snooze-quick" data-at="${quickDueAt(0)}">Today</button>
+        <button class="snooze-quick" data-at="${quickDueAt(1)}">+1d</button>
+        <button class="snooze-quick" data-at="${quickDueAt(7)}">+1w</button>
+        <button class="snooze-clear">Clear</button>
+        <input type="date" class="snooze-date" value="${snoozeDateStr}" />
+      </div>`
+    : "";
+
   const titleArea = editing
     ? `<div class="edit-row"><input type="text" value="${escapeHTML(t.title)}" /></div>`
-    : `<div class="title">${escapeHTML(t.title)}</div>${convoSubj}<div class="meta">${due}${assignees}</div>`;
+    : `<div class="title">${escapeHTML(t.title)}</div>${convoSubj}<div class="meta">${due}${assignees}</div>${snoozeRow}`;
 
   const actions = editing ? "" : `
     <div class="actions">
+      <button class="btn-snooze" title="Change due date">📅</button>
       <button class="btn-edit" title="Rename">✎</button>
     </div>
   `;

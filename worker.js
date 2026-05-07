@@ -132,12 +132,13 @@ async function handleListTasks(env, userEmail, params, cors) {
 }
 
 async function handleCreateTask(env, userEmail, body, cors) {
-  // Stash the convo subject inside description so we can show "📧 subject"
-  // on task rows later — Missive's task model doesn't carry it natively.
+  // Stash subject + conversation ID in description so they survive the list
+  // API, which doesn't always return the conversation relationship on tasks.
   const subjectTag = body.convo_subject ? `\n[convo: ${body.convo_subject}]` : "";
+  const convIdTag  = body.conversation_id ? `\n[conv_id: ${body.conversation_id}]` : "";
   const payload = {
     title: body.title || "(untitled)",
-    description: (body.description || "") + subjectTag,
+    description: (body.description || "") + subjectTag + convIdTag,
     status: "todo",
   };
   if (body.due_at)            payload.due_at    = body.due_at;
@@ -181,8 +182,10 @@ function normalizeTask(t) {
   // Pull the [convo: …] line out of description so the sidebar can show it
   // separately. Match is permissive — leading/trailing whitespace OK.
   const desc = t.description || "";
-  const m = desc.match(/\[convo:\s*([^\]]+)\]/);
-  const convoSubject = m ? m[1].trim() : null;
+  const m    = desc.match(/\[convo:\s*([^\]]+)\]/);
+  const mId  = desc.match(/\[conv_id:\s*([^\]]+)\]/);
+  const convoSubject  = m   ? m[1].trim()   : null;
+  const storedConvId  = mId ? mId[1].trim() : null;
   return {
     id: t.id,
     title: t.title,
@@ -190,7 +193,7 @@ function normalizeTask(t) {
     status: t.status || "todo",
     due_at: t.due_at || null,
     assignees: (t.assignees || []).map(a => ({ id: a.id, name: a.name, email: a.email })),
-    conversation_id: t.conversation?.id || t.conversation_id || null,
+    conversation_id: t.conversation?.id || t.conversation_id || storedConvId || null,
     convo_subject: t.conversation?.subject || convoSubject || null,
     created_at: t.created_at || null,
     closed_at: t.closed_at || null,
@@ -233,7 +236,11 @@ async function handleWebhook(env, body) {
 
   const payload = {
     title,
-    description: `Created from comment in ${conversation.subject || "(conversation)"}.`,
+    description: [
+      `Created from comment in ${subject}.`,
+      `[convo: ${subject}]`,
+      conversation.id ? `[conv_id: ${conversation.id}]` : "",
+    ].filter(Boolean).join("\n"),
     status: "todo",
     subtask: true,
     conversation: conversation.id,
