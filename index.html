@@ -410,15 +410,19 @@ const state = {
 
 // ---------- Missive bridge -------------------------------------------------
 // Loaded by the parent frame. We wait for `Missive.on` to exist.
-function whenMissiveReady() {
+function whenMissiveReady(timeoutMs = 3000) {
   return new Promise((resolve) => {
-    if (window.Missive && Missive.on) return resolve();
+    const ready = () => window.Missive && (typeof Missive.on === "function" || typeof Missive.fetchConversations === "function");
+    if (ready()) return resolve();
     const id = setInterval(() => {
-      if (window.Missive && Missive.on) {
+      if (ready()) {
         clearInterval(id);
         resolve();
       }
     }, 50);
+    // Fall through after a timeout so the rest of the page still boots even
+    // if Missive's global is unavailable (e.g. running standalone).
+    setTimeout(() => { clearInterval(id); resolve(); }, timeoutMs);
   });
 }
 
@@ -441,8 +445,19 @@ async function bootMissive() {
   await whenMissiveReady();
 
   try {
-    const keys = Object.keys(window.Missive || {});
-    dumpDebug("Missive keys (" + keys.length + "): " + keys.join(", "));
+    const M = window.Missive;
+    if (!M) {
+      dumpDebug("window.Missive is undefined after wait. (Standalone? Or Missive didn't inject the SDK.)");
+    } else {
+      const keys = Object.keys(M);
+      const proto = Object.getPrototypeOf(M);
+      const protoKeys = proto ? Object.getOwnPropertyNames(proto).filter(k => typeof M[k] === "function") : [];
+      const allFns = [...new Set([...keys, ...protoKeys])].filter(k => typeof M[k] === "function");
+      dumpDebug(
+        "Missive own keys (" + keys.length + "): " + keys.join(", ") + "\n" +
+        "Functions on M (" + allFns.length + "): " + allFns.join(", ")
+      );
+    }
   } catch (e) {
     dumpDebug("Missive inspect failed: " + e.message);
   }
