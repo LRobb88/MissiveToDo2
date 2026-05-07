@@ -2,6 +2,10 @@ name = "missive-todo"
 main = "worker.js"
 compatibility_date = "2025-04-01"
 
+[assets]
+directory = "."
+binding = "ASSETS"
+
 # Set with `wrangler secret put MISSIVE_API_TOKEN`, etc. — never commit them.
 # These keys are listed here only as a checklist:
 #   MISSIVE_API_TOKEN  - Bearer token from Missive (Settings → API)

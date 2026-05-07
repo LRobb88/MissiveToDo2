@@ -267,6 +267,11 @@ export default {
     }
 
     try {
+      // ---- Static assets (sidebar HTML + parser.js) ----------------------
+      if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
+        return env.ASSETS.fetch(req);
+      }
+
       // ---- Webhook (no CORS, signature-validated) ------------------------
       if (url.pathname === "/webhook/missive" && req.method === "POST") {
         const raw = await req.text();
