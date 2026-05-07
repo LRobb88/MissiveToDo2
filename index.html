@@ -116,15 +116,32 @@
   .chip.user { background: var(--ok-soft); color: var(--ok); border-color: var(--ok-soft); }
   .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-soft); }
 
+  .searchwrap {
+    margin-top: 8px;
+  }
+  .searchwrap input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+  }
+  .searchwrap input:focus { border-color: var(--accent); }
   nav.tabs {
     display: flex;
     gap: 2px;
-    margin-top: 10px;
+    margin-top: 8px;
     border-bottom: 1px solid var(--border);
     margin-left: -12px;
     margin-right: -12px;
     padding: 0 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  nav.tabs::-webkit-scrollbar { display: none; }
   nav.tabs button {
     background: none;
     border: none;
@@ -135,6 +152,7 @@
     cursor: pointer;
     border-bottom: 2px solid transparent;
     margin-bottom: -1px;
+    white-space: nowrap;
   }
   nav.tabs button.active {
     color: var(--text);
@@ -207,6 +225,48 @@
     font-size: 11px;
   }
   .convo-link:hover { text-decoration: underline; }
+  .task .actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity .12s;
+    flex: 0 0 auto;
+  }
+  .task:hover .actions { opacity: 1; }
+  .task .actions button {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .task .actions button:hover { background: var(--bg-hover); color: var(--text); }
+  .task .convo-subject {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task .edit-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .task .edit-row input {
+    flex: 1;
+    padding: 4px 6px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  .task.archived { opacity: 0.65; }
   .toast {
     position: fixed;
     bottom: 12px;
@@ -281,11 +341,21 @@
     </div>
   </div>
 
+  <div class="searchwrap">
+    <input
+      id="search"
+      placeholder="Search tasks…"
+      autocomplete="off"
+      spellcheck="false"
+    />
+  </div>
+
   <nav class="tabs" id="tabs">
-    <button data-tab="today"   class="active">Today <span class="count" id="count-today">0</span></button>
-    <button data-tab="upcoming">Upcoming <span class="count" id="count-upcoming">0</span></button>
-    <button data-tab="convo">Inbox <span class="count" id="count-convo">0</span></button>
-    <button data-tab="all">All <span class="count" id="count-all">0</span></button>
+    <button data-tab="today"    class="active">Today <span class="count" id="count-today">0</span></button>
+    <button data-tab="thisweek">This Week <span class="count" id="count-thisweek">0</span></button>
+    <button data-tab="someday">Someday <span class="count" id="count-someday">0</span></button>
+    <button data-tab="personal">Personal <span class="count" id="count-personal">0</span></button>
+    <button data-tab="archive">Archive <span class="count" id="count-archive">0</span></button>
   </nav>
 </header>
 
@@ -332,8 +402,10 @@ const state = {
   users:     [],             // org users for @-matching
   convoId:   null,           // currently selected conversation
   convoSubject: "",
-  tasks:     [],             // all open tasks for me (across conversations)
+  tasks:     [],             // ALL tasks for me — open and closed
   activeTab: "today",
+  searchQuery: "",
+  editingId: null,           // task id currently being inline-edited
 };
 
 // ---------- Missive bridge -------------------------------------------------
@@ -449,7 +521,9 @@ async function api(path, opts = {}) {
 async function loadTasks() {
   if (!API_BASE) return;
   try {
-    const r = await api("/api/tasks?assignee=me&status=open");
+    // Pull both open and closed; the UI filters per-tab. Archive needs the
+    // closed ones, everything else needs the open ones.
+    const r = await api("/api/tasks?assignee=me&status=any");
     state.tasks = r.tasks || [];
     render();
   } catch (e) {
@@ -457,12 +531,31 @@ async function loadTasks() {
   }
 }
 
-async function createTask(parsed, titleFallback) {
+// Fetch the current conversation's subject right now. Used as a title
+// fallback when the user hits Enter before `change:conversations` has fired
+// and populated state.convoSubject.
+async function refreshConvoSubject() {
+  if (!state.convoId || state.convoSubject) return state.convoSubject;
+  try {
+    const convos = await Missive.fetchConversations([state.convoId]);
+    if (convos && convos[0]) {
+      state.convoSubject = convos[0].subject || convos[0].latest_message?.subject || "";
+    }
+  } catch (_) {}
+  return state.convoSubject;
+}
+
+async function createTask(parsed) {
+  // Resolve title: parsed body wins; otherwise fetch the live subject from
+  // Missive so we don't fall through to "(untitled)" when the change event
+  // hasn't fired yet.
+  let titleFallback = state.convoSubject;
+  if (!parsed.title && state.convoId && !titleFallback) {
+    titleFallback = await refreshConvoSubject();
+  }
   const title = decorateTitle(parsed.title || titleFallback || "(untitled)", parsed.priority);
   // Default-assign to me when there's no explicit @mention and no
-  // conversation context to make the task a subtask of. This keeps tasks
-  // showing up under the right person and avoids the "team or assignee
-  // required" error from Missive's REST API on standalone tasks.
+  // conversation context to make the task a subtask of.
   let assigneeIds = parsed.assignees.map(u => u.id);
   if (!assigneeIds.length && !state.convoId && state.me?.id) {
     assigneeIds = [state.me.id];
@@ -473,6 +566,7 @@ async function createTask(parsed, titleFallback) {
     assignees: assigneeIds,
     priority: parsed.priority,
     conversation_id: state.convoId || null,
+    convo_subject: state.convoSubject || null,
   };
   const created = await api("/api/tasks", { method: "POST", body: JSON.stringify(body) });
   state.tasks.unshift(created.task);
@@ -488,6 +582,52 @@ async function setTaskClosed(id, closed) {
   const t = state.tasks.find(t => t.id === id);
   if (t) t.status = closed ? "closed" : "todo";
   render();
+}
+
+async function renameTask(id, newTitle) {
+  const trimmed = (newTitle || "").trim();
+  if (!trimmed) return;
+  const t = state.tasks.find(x => x.id === id);
+  if (!t || t.title === trimmed) {
+    state.editingId = null;
+    render();
+    return;
+  }
+  // Optimistic update — revert if the worker rejects.
+  const prev = t.title;
+  t.title = trimmed;
+  state.editingId = null;
+  render();
+  try {
+    await api("/api/tasks/" + encodeURIComponent(id), {
+      method: "PATCH",
+      body: JSON.stringify({ title: trimmed }),
+    });
+  } catch (e) {
+    t.title = prev;
+    toast("Rename failed: " + e.message);
+    render();
+  }
+}
+
+// Open a Missive conversation. The JS API exposes different method names in
+// different versions, so try them in order.
+function navigateToConversation(cid) {
+  if (!cid || !window.Missive) return;
+  const candidates = ["openConversation", "openConversations", "selectConversation", "selectConversations"];
+  for (const name of candidates) {
+    const fn = Missive[name];
+    if (typeof fn !== "function") continue;
+    try {
+      // Some take a single id, some take an array. Try the array shape first
+      // since it works for both per-Missive convention.
+      const res = fn.length >= 1 ? fn.call(Missive, [cid]) : fn.call(Missive, cid);
+      return res;
+    } catch (_) {
+      try { return fn.call(Missive, cid); } catch (__) {}
+    }
+  }
+  console.warn("No Missive method found to open a conversation. Tried:", candidates);
 }
 
 // ---------- UI helpers -----------------------------------------------------
@@ -513,53 +653,102 @@ function dueLabel(t) {
   return due.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// Bucket helpers (kept) drive tab filtering and chip coloring. Tabs now:
+//   today    = overdue + due today (open tasks only)
+//   thisweek = due in next 7 days (open tasks only)
+//   someday  = open tasks with no due date
+//   personal = open standalone tasks (no conversation_id)
+//   archive  = closed tasks
 function tasksForTab(tab) {
   const open = state.tasks.filter(t => t.status !== "closed");
-  if (tab === "today") return open.filter(t => ["overdue","today"].includes(dueBucket(t)));
-  if (tab === "upcoming") return open.filter(t => ["thisweek","later"].includes(dueBucket(t)) && t.due_at);
-  if (tab === "convo") return open.filter(t => t.conversation_id && t.conversation_id === state.convoId);
+  if (tab === "today")    return open.filter(t => ["overdue","today"].includes(dueBucket(t)));
+  if (tab === "thisweek") return open.filter(t => dueBucket(t) === "thisweek");
+  if (tab === "someday")  return open.filter(t => !t.due_at);
+  if (tab === "personal") return open.filter(t => !t.conversation_id);
+  if (tab === "archive")  return state.tasks.filter(t => t.status === "closed");
   return open;
+}
+
+function applySearch(tasks) {
+  const q = state.searchQuery.trim().toLowerCase();
+  if (!q) return tasks;
+  return tasks.filter(t => {
+    const title = (t.title || "").toLowerCase();
+    const subj  = (t.convo_subject || "").toLowerCase();
+    return title.includes(q) || subj.includes(q);
+  });
 }
 
 function renderCounts() {
   const open = state.tasks.filter(t => t.status !== "closed");
+  const closed = state.tasks.filter(t => t.status === "closed");
   document.getElementById("count-today")    .textContent = open.filter(t => ["overdue","today"].includes(dueBucket(t))).length;
-  document.getElementById("count-upcoming") .textContent = open.filter(t => ["thisweek","later"].includes(dueBucket(t)) && t.due_at).length;
-  document.getElementById("count-convo")    .textContent = open.filter(t => t.conversation_id === state.convoId).length;
-  document.getElementById("count-all")      .textContent = open.length;
+  document.getElementById("count-thisweek") .textContent = open.filter(t => dueBucket(t) === "thisweek").length;
+  document.getElementById("count-someday")  .textContent = open.filter(t => !t.due_at).length;
+  document.getElementById("count-personal") .textContent = open.filter(t => !t.conversation_id).length;
+  document.getElementById("count-archive")  .textContent = closed.length;
 }
 
 function render() {
   renderCounts();
   const list = document.getElementById("list");
-  const tasks = tasksForTab(state.activeTab);
+  let tasks = tasksForTab(state.activeTab);
+  tasks = applySearch(tasks);
   if (!tasks.length) {
     let msg = "Nothing here.";
-    if (state.activeTab === "convo" && !state.convoId) msg = "Select an email to see its tasks.";
-    if (state.activeTab === "convo" && state.convoId)  msg = "No tasks for this conversation.";
-    if (state.activeTab === "today")    msg = "All clear for today. 🎉";
-    if (state.activeTab === "upcoming") msg = "Nothing scheduled.";
+    if (state.searchQuery) msg = `No matches for "${escapeHTML(state.searchQuery)}".`;
+    else if (state.activeTab === "today")    msg = "All clear for today. 🎉";
+    else if (state.activeTab === "thisweek") msg = "Nothing scheduled this week.";
+    else if (state.activeTab === "someday")  msg = "No open someday tasks.";
+    else if (state.activeTab === "personal") msg = "No personal tasks. Add one with no email selected.";
+    else if (state.activeTab === "archive")  msg = "Nothing archived yet.";
     list.innerHTML = `<div class="empty">${msg}</div>`;
     return;
   }
-  // Sort: overdue → today → by due date → no date last
-  tasks.sort((a,b) => {
-    const ba = dueBucket(a), bb = dueBucket(b);
-    const order = { overdue:0, today:1, thisweek:2, later:3 };
-    if (order[ba] !== order[bb]) return order[ba] - order[bb];
-    return (a.due_at || 9e15) - (b.due_at || 9e15);
-  });
+  // Sort: archive by closed_at desc; everything else by overdue → today → by due date → no date last.
+  if (state.activeTab === "archive") {
+    tasks.sort((a,b) => (b.closed_at || b.created_at || 0) - (a.closed_at || a.created_at || 0));
+  } else {
+    tasks.sort((a,b) => {
+      const ba = dueBucket(a), bb = dueBucket(b);
+      const order = { overdue:0, today:1, thisweek:2, later:3 };
+      if (order[ba] !== order[bb]) return order[ba] - order[bb];
+      return (a.due_at || 9e15) - (b.due_at || 9e15);
+    });
+  }
   list.innerHTML = tasks.map(t => taskRow(t)).join("");
+  bindTaskRows();
+}
+
+function bindTaskRows() {
+  const list = document.getElementById("list");
   list.querySelectorAll(".task").forEach(el => {
-    el.querySelector(".check").addEventListener("click", (e) => {
+    const id = el.dataset.id;
+    const editInput = el.querySelector(".edit-row input");
+    if (editInput) {
+      editInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); renameTask(id, editInput.value); }
+        if (e.key === "Escape") { state.editingId = null; render(); }
+      });
+      editInput.addEventListener("blur", () => renameTask(id, editInput.value));
+      // Auto-focus the input when entering edit mode
+      setTimeout(() => { editInput.focus(); editInput.select(); }, 0);
+      return; // edit mode: skip other handlers
+    }
+    el.querySelector(".check")?.addEventListener("click", (e) => {
       e.stopPropagation();
-      const id = el.dataset.id;
       const t = state.tasks.find(x => x.id === id);
       setTaskClosed(id, t.status !== "closed");
     });
+    el.querySelector(".btn-edit")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.editingId = id;
+      render();
+    });
+    // Click anywhere else on the row navigates to the conversation (if any).
     el.addEventListener("click", () => {
       const cid = el.dataset.convo;
-      if (cid && window.Missive) Missive.openConversation(cid);
+      if (cid) navigateToConversation(cid);
     });
   });
 }
@@ -572,16 +761,27 @@ function taskRow(t) {
     ? `<span class="chip due-${bucket}">${dueLabel(t)}</span>`
     : "";
   const assignees = (t.assignees || []).map(a => `<span class="chip user">@${escapeHTML(a.name?.split(" ")[0] || "")}</span>`).join("");
-  const convoLink = t.conversation_id
-    ? `<span class="chip">📧</span>`
+  const editing = state.editingId === t.id;
+  const archived = t.status === "closed";
+  const convoSubj = t.convo_subject
+    ? `<div class="convo-subject" title="${escapeHTML(t.convo_subject)}">📧 ${escapeHTML(t.convo_subject)}</div>`
     : "";
+
+  const titleArea = editing
+    ? `<div class="edit-row"><input type="text" value="${escapeHTML(t.title)}" /></div>`
+    : `<div class="title">${escapeHTML(t.title)}</div>${convoSubj}<div class="meta">${due}${assignees}</div>`;
+
+  const actions = editing ? "" : `
+    <div class="actions">
+      <button class="btn-edit" title="Rename">✎</button>
+    </div>
+  `;
+
   return `
-    <div class="task ${t.status === "closed" ? "done" : ""}" data-id="${t.id}" data-convo="${t.conversation_id || ""}">
-      <div class="check ${t.status === "closed" ? "done" : ""}">${t.status === "closed" ? "✓" : ""}</div>
-      <div class="body">
-        <div class="title">${escapeHTML(t.title)}</div>
-        <div class="meta">${due}${assignees}${convoLink}</div>
-      </div>
+    <div class="task ${archived ? "done archived" : ""}" data-id="${t.id}" data-convo="${t.conversation_id || ""}">
+      <div class="check ${archived ? "done" : ""}">${archived ? "✓" : ""}</div>
+      <div class="body">${titleArea}</div>
+      ${actions}
     </div>
   `;
 }
@@ -617,12 +817,19 @@ input.addEventListener("keydown", async (e) => {
     input.value = "";
     renderPreview();
     try {
-      await createTask(parsed, state.convoSubject);
+      await createTask(parsed);
       toast("Task added");
     } catch (err) {
       toast("Failed: " + err.message);
     }
   }
+});
+
+// Search bar — filters whatever tab is currently active.
+const searchEl = document.getElementById("search");
+searchEl.addEventListener("input", () => {
+  state.searchQuery = searchEl.value;
+  render();
 });
 
 document.getElementById("tabs").addEventListener("click", (e) => {

@@ -104,14 +104,25 @@ async function handleListUsers(env, cors) {
 }
 
 async function handleListTasks(env, userEmail, params, cors) {
-  // Missive's tasks index supports filtering by assignee. We pull a page and
-  // also filter client-side as a safety net since query-string grammar varies.
-  const data = await missiveFetch(env, "/tasks?limit=200");
-  const all = (data.tasks || []).map(normalizeTask);
-  const status = params.get("status") || "any";
+  // Pull a generous page and filter client-side. Missive's `/tasks` index
+  // returns open tasks by default; to also get closed ones for the Archive
+  // view we need a second fetch (Missive doesn't accept ?status=any).
+  const status = params.get("status") || "open";
   const assignee = params.get("assignee");
-  let tasks = all;
-  if (status === "open") tasks = tasks.filter(t => t.status !== "closed");
+  const open = await missiveFetch(env, "/tasks?limit=200");
+  let raw = open.tasks || [];
+  if (status === "any" || status === "closed") {
+    try {
+      const closed = await missiveFetch(env, "/tasks?limit=100&status=closed");
+      raw = raw.concat(closed.tasks || []);
+    } catch (_) { /* not all Missive plans expose closed tasks; keep going */ }
+  }
+  let tasks = raw.map(normalizeTask);
+  // De-dupe in case a closed task showed up in both queries.
+  const seen = new Set();
+  tasks = tasks.filter(t => seen.has(t.id) ? false : (seen.add(t.id), true));
+  if (status === "open")   tasks = tasks.filter(t => t.status !== "closed");
+  if (status === "closed") tasks = tasks.filter(t => t.status === "closed");
   if (assignee === "me" && userEmail) {
     tasks = tasks.filter(t =>
       (t.assignees || []).some(a => (a.email || "").toLowerCase() === userEmail.toLowerCase())
@@ -121,9 +132,12 @@ async function handleListTasks(env, userEmail, params, cors) {
 }
 
 async function handleCreateTask(env, userEmail, body, cors) {
+  // Stash the convo subject inside description so we can show "📧 subject"
+  // on task rows later — Missive's task model doesn't carry it natively.
+  const subjectTag = body.convo_subject ? `\n[convo: ${body.convo_subject}]` : "";
   const payload = {
     title: body.title || "(untitled)",
-    description: body.description || "",
+    description: (body.description || "") + subjectTag,
     status: "todo",
   };
   if (body.due_at)            payload.due_at    = body.due_at;
@@ -164,15 +178,22 @@ async function handlePatchTask(env, id, body, cors) {
 }
 
 function normalizeTask(t) {
+  // Pull the [convo: …] line out of description so the sidebar can show it
+  // separately. Match is permissive — leading/trailing whitespace OK.
+  const desc = t.description || "";
+  const m = desc.match(/\[convo:\s*([^\]]+)\]/);
+  const convoSubject = m ? m[1].trim() : null;
   return {
     id: t.id,
     title: t.title,
-    description: t.description || "",
+    description: desc,
     status: t.status || "todo",
     due_at: t.due_at || null,
     assignees: (t.assignees || []).map(a => ({ id: a.id, name: a.name, email: a.email })),
     conversation_id: t.conversation?.id || t.conversation_id || null,
+    convo_subject: t.conversation?.subject || convoSubject || null,
     created_at: t.created_at || null,
+    closed_at: t.closed_at || null,
   };
 }
 
