@@ -1,0 +1,17 @@
+name = "missive-todo"
+main = "worker.js"
+compatibility_date = "2025-04-01"
+
+# Set with `wrangler secret put MISSIVE_API_TOKEN`, etc. — never commit them.
+# These keys are listed here only as a checklist:
+#   MISSIVE_API_TOKEN  - Bearer token from Missive (Settings → API)
+#   MISSIVE_TEAM_ID    - team UUID for default-team task creation
+#   SIDEBAR_TOKEN      - shared secret between sidebar and worker; rotate by
+#                        regenerating + updating the Missive integration URL
+#   ALLOWED_ORIGIN     - https://<your-username>.github.io (no trailing slash)
+#   WEBHOOK_SECRET     - matches the validation secret on your Missive Rule
+#   ORG_USERS_JSON     - optional cached user list, e.g.
+#                        '[{"id":"…","name":"Logan Roberts","email":"logan@…"}]'
+
+# Keep this empty in source control. Use `wrangler secret put` for real values.
+[vars]

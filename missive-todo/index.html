@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Inbox To-Do</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f6f7f9;
+    --bg-hover: #eef0f4;
+    --border: #e3e6eb;
+    --text: #1c1f24;
+    --text-muted: #6b7280;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --danger: #dc2626;
+    --danger-soft: #fee2e2;
+    --warn: #b45309;
+    --warn-soft: #fef3c7;
+    --ok: #059669;
+    --ok-soft: #d1fae5;
+    --shadow: 0 1px 3px rgba(15,17,21,.06), 0 1px 2px rgba(15,17,21,.04);
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1c20;
+      --bg-soft: #23262c;
+      --bg-hover: #2c3038;
+      --border: #353a44;
+      --text: #e6e8eb;
+      --text-muted: #9ba1ad;
+      --accent: #60a5fa;
+      --accent-soft: #1e3a8a;
+      --danger-soft: #4c1d1d;
+      --warn-soft: #4a3308;
+      --ok-soft: #064e3b;
+      --shadow: 0 1px 3px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  h1 {
+    font-size: 13px;
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+  }
+  h1 .badge {
+    font-weight: 500;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-soft);
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+  .quickadd {
+    position: relative;
+  }
+  .quickadd input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .12s, background .12s;
+  }
+  .quickadd input:focus {
+    border-color: var(--accent);
+    background: var(--bg);
+  }
+  .preview {
+    margin-top: 6px;
+    min-height: 22px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 7px;
+    border-radius: 11px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .chip.due { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent); }
+  .chip.high { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-soft); }
+  .chip.low { background: var(--bg-hover); color: var(--text-muted); }
+  .chip.user { background: var(--ok-soft); color: var(--ok); border-color: var(--ok-soft); }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-soft); }
+
+  nav.tabs {
+    display: flex;
+    gap: 2px;
+    margin-top: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-left: -12px;
+    margin-right: -12px;
+    padding: 0 8px;
+  }
+  nav.tabs button {
+    background: none;
+    border: none;
+    padding: 6px 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  nav.tabs button.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  nav.tabs button .count {
+    margin-left: 4px;
+    background: var(--bg-soft);
+    color: var(--text-muted);
+    padding: 0 5px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  main {
+    padding: 8px 0 24px;
+  }
+  .empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 32px 16px;
+    font-size: 12px;
+  }
+  .task {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .08s;
+  }
+  .task:hover { background: var(--bg-soft); }
+  .task .check {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--text-muted);
+    border-radius: 4px;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    background: transparent;
+    cursor: pointer;
+  }
+  .task .check.done {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  .task .body { flex: 1; min-width: 0; }
+  .task .title {
+    font-size: 13px;
+    word-break: break-word;
+  }
+  .task.done .title { text-decoration: line-through; color: var(--text-muted); }
+  .task .meta {
+    margin-top: 3px;
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .meta .due-overdue { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-soft); }
+  .meta .due-today { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-soft); }
+  .meta .due-future { background: var(--bg-soft); color: var(--text-muted); }
+  .convo-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 11px;
+  }
+  .convo-link:hover { text-decoration: underline; }
+  .toast {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    background: var(--text);
+    color: var(--bg);
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    font-size: 12px;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    transition: opacity .15s, transform .15s;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .help {
+    padding: 8px 12px 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border);
+  }
+  .help kbd {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 10.5px;
+    font-family: ui-monospace, monospace;
+  }
+  .help-toggle {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0;
+  }
+  .spinner {
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    animation: spin .8s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <span>Inbox To-Do</span>
+    <span class="badge" id="userBadge">…</span>
+  </h1>
+
+  <div class="quickadd">
+    <input
+      id="quickadd"
+      placeholder="#f-3d follow up @sarah !high"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <div class="preview" id="preview">
+      <span style="color: var(--text-muted)">Type a shortcut, hit ⏎ to add.</span>
+      <button class="help-toggle" id="helpToggle" type="button">help</button>
+    </div>
+  </div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="today"   class="active">Today <span class="count" id="count-today">0</span></button>
+    <button data-tab="upcoming">Upcoming <span class="count" id="count-upcoming">0</span></button>
+    <button data-tab="convo">Inbox <span class="count" id="count-convo">0</span></button>
+    <button data-tab="all">All <span class="count" id="count-all">0</span></button>
+  </nav>
+</header>
+
+<div class="help" id="helpPanel" hidden>
+  <strong>Dates:</strong>
+  <kbd>#today</kbd> <kbd>#tom</kbd> <kbd>#someday</kbd>
+  <kbd>#f-3d</kbd> <kbd>#f-1w</kbd> <kbd>#f-mon</kbd>
+  <br/>
+  <strong>People:</strong> <kbd>@firstname</kbd> &nbsp;
+  <strong>Priority:</strong> <kbd>!high</kbd> <kbd>!low</kbd>
+  <br/>
+  <span style="color: var(--text-muted)">
+    Tokens can appear in any order. Anything else becomes the title;
+    if you leave the title blank, the email subject is used.
+  </span>
+</div>
+
+<main id="list">
+  <div class="empty">Loading…</div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { parseShortcut, decorateTitle } from "./parser.js";
+
+// ---------- Configuration --------------------------------------------------
+// Both values come from the integration URL you paste into Missive, e.g.
+//   https://you.github.io/missive-todo/?api=https://missive-todo.you.workers.dev&token=<SIDEBAR_TOKEN>
+// The token is the shared secret between this sidebar and the Worker. It's
+// only visible to Missive admins (in the integration settings) and to the
+// browser tab loading this page, so it stays internal.
+const params = new URLSearchParams(location.search);
+const API_BASE = params.get("api") || "";
+const API_TOKEN = params.get("token") || "";
+
+// ---------- State ----------------------------------------------------------
+const state = {
+  me:        null,           // current Missive user { id, name, email }
+  users:     [],             // org users for @-matching
+  convoId:   null,           // currently selected conversation
+  convoSubject: "",
+  tasks:     [],             // all open tasks for me (across conversations)
+  activeTab: "today",
+};
+
+// ---------- Missive bridge -------------------------------------------------
+// Loaded by the parent frame. We wait for `Missive.on` to exist.
+function whenMissiveReady() {
+  return new Promise((resolve) => {
+    if (window.Missive && Missive.on) return resolve();
+    const id = setInterval(() => {
+      if (window.Missive && Missive.on) {
+        clearInterval(id);
+        resolve();
+      }
+    }, 50);
+  });
+}
+
+async function bootMissive() {
+  await whenMissiveReady();
+
+  // Current user
+  try {
+    const ctx = await Missive.fetchUserContext();
+    state.me = { id: ctx.user.id, name: ctx.user.name, email: ctx.user.email };
+    document.getElementById("userBadge").textContent = state.me.name.split(" ")[0];
+  } catch (e) {
+    document.getElementById("userBadge").textContent = "?";
+    console.warn("fetchUserContext failed", e);
+  }
+
+  // Org users (for @-name resolution)
+  try {
+    const users = await Missive.fetchUsers();
+    state.users = (users || []).map(u => ({ id: u.id, name: u.name, email: u.email }));
+  } catch (e) {
+    console.warn("fetchUsers failed", e);
+  }
+
+  // Conversation context — refresh whenever selection changes.
+  Missive.on("change:conversations", async (ids) => {
+    if (!ids || ids.length !== 1) {
+      state.convoId = null;
+      state.convoSubject = "";
+    } else {
+      try {
+        const convos = await Missive.fetchConversations(ids);
+        if (convos && convos[0]) {
+          state.convoId = convos[0].id;
+          state.convoSubject = convos[0].subject || convos[0].latest_message?.subject || "";
+        }
+      } catch (e) { console.warn(e); }
+    }
+    render();
+  });
+}
+
+// ---------- API client -----------------------------------------------------
+async function api(path, opts = {}) {
+  if (!API_BASE) {
+    throw new Error("API URL not configured. Pass ?api=… in the integration URL.");
+  }
+  if (!API_TOKEN) {
+    throw new Error("API token not configured. Pass &token=… in the integration URL.");
+  }
+  const headers = {
+    "content-type": "application/json",
+    "authorization": "Bearer " + API_TOKEN,
+  };
+  if (state.me) {
+    headers["x-missive-user-email"] = state.me.email;
+    headers["x-missive-user-id"] = state.me.id;
+  }
+  const res = await fetch(API_BASE.replace(/\/$/, "") + path, {
+    ...opts,
+    headers: { ...headers, ...(opts.headers || {}) },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+async function loadTasks() {
+  if (!API_BASE) return;
+  try {
+    const r = await api("/api/tasks?assignee=me&status=open");
+    state.tasks = r.tasks || [];
+    render();
+  } catch (e) {
+    toast("Couldn't load tasks: " + e.message);
+  }
+}
+
+async function createTask(parsed, titleFallback) {
+  const title = decorateTitle(parsed.title || titleFallback || "(untitled)", parsed.priority);
+  const body = {
+    title,
+    due_at: parsed.dueAt,
+    assignees: parsed.assignees.map(u => u.id),
+    priority: parsed.priority,
+    conversation_id: state.convoId || null,
+  };
+  const created = await api("/api/tasks", { method: "POST", body: JSON.stringify(body) });
+  state.tasks.unshift(created.task);
+  render();
+  return created.task;
+}
+
+async function setTaskClosed(id, closed) {
+  await api("/api/tasks/" + encodeURIComponent(id), {
+    method: "PATCH",
+    body: JSON.stringify({ status: closed ? "closed" : "todo" }),
+  });
+  const t = state.tasks.find(t => t.id === id);
+  if (t) t.status = closed ? "closed" : "todo";
+  render();
+}
+
+// ---------- UI helpers -----------------------------------------------------
+const dayMs = 86400 * 1000;
+function startOfDay(d = new Date()) {
+  const x = new Date(d); x.setHours(0,0,0,0); return x;
+}
+function dueBucket(t) {
+  if (!t.due_at) return "later";
+  const due = new Date(t.due_at * 1000);
+  const today = startOfDay();
+  if (due < today) return "overdue";
+  if (due < new Date(today.getTime() + dayMs)) return "today";
+  if (due < new Date(today.getTime() + 7 * dayMs)) return "thisweek";
+  return "later";
+}
+function dueLabel(t) {
+  if (!t.due_at) return "Someday";
+  const due = new Date(t.due_at * 1000);
+  const b = dueBucket(t);
+  if (b === "overdue") return "Overdue";
+  if (b === "today")   return "Today";
+  return due.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function tasksForTab(tab) {
+  const open = state.tasks.filter(t => t.status !== "closed");
+  if (tab === "today") return open.filter(t => ["overdue","today"].includes(dueBucket(t)));
+  if (tab === "upcoming") return open.filter(t => ["thisweek","later"].includes(dueBucket(t)) && t.due_at);
+  if (tab === "convo") return open.filter(t => t.conversation_id && t.conversation_id === state.convoId);
+  return open;
+}
+
+function renderCounts() {
+  const open = state.tasks.filter(t => t.status !== "closed");
+  document.getElementById("count-today")    .textContent = open.filter(t => ["overdue","today"].includes(dueBucket(t))).length;
+  document.getElementById("count-upcoming") .textContent = open.filter(t => ["thisweek","later"].includes(dueBucket(t)) && t.due_at).length;
+  document.getElementById("count-convo")    .textContent = open.filter(t => t.conversation_id === state.convoId).length;
+  document.getElementById("count-all")      .textContent = open.length;
+}
+
+function render() {
+  renderCounts();
+  const list = document.getElementById("list");
+  const tasks = tasksForTab(state.activeTab);
+  if (!tasks.length) {
+    let msg = "Nothing here.";
+    if (state.activeTab === "convo" && !state.convoId) msg = "Select an email to see its tasks.";
+    if (state.activeTab === "convo" && state.convoId)  msg = "No tasks for this conversation.";
+    if (state.activeTab === "today")    msg = "All clear for today. 🎉";
+    if (state.activeTab === "upcoming") msg = "Nothing scheduled.";
+    list.innerHTML = `<div class="empty">${msg}</div>`;
+    return;
+  }
+  // Sort: overdue → today → by due date → no date last
+  tasks.sort((a,b) => {
+    const ba = dueBucket(a), bb = dueBucket(b);
+    const order = { overdue:0, today:1, thisweek:2, later:3 };
+    if (order[ba] !== order[bb]) return order[ba] - order[bb];
+    return (a.due_at || 9e15) - (b.due_at || 9e15);
+  });
+  list.innerHTML = tasks.map(t => taskRow(t)).join("");
+  list.querySelectorAll(".task").forEach(el => {
+    el.querySelector(".check").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = el.dataset.id;
+      const t = state.tasks.find(x => x.id === id);
+      setTaskClosed(id, t.status !== "closed");
+    });
+    el.addEventListener("click", () => {
+      const cid = el.dataset.convo;
+      if (cid && window.Missive) Missive.openConversation(cid);
+    });
+  });
+}
+
+function escapeHTML(s) { return (s||"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function taskRow(t) {
+  const bucket = dueBucket(t);
+  const due = t.due_at
+    ? `<span class="chip due-${bucket}">${dueLabel(t)}</span>`
+    : "";
+  const assignees = (t.assignees || []).map(a => `<span class="chip user">@${escapeHTML(a.name?.split(" ")[0] || "")}</span>`).join("");
+  const convoLink = t.conversation_id
+    ? `<span class="chip">📧</span>`
+    : "";
+  return `
+    <div class="task ${t.status === "closed" ? "done" : ""}" data-id="${t.id}" data-convo="${t.conversation_id || ""}">
+      <div class="check ${t.status === "closed" ? "done" : ""}">${t.status === "closed" ? "✓" : ""}</div>
+      <div class="body">
+        <div class="title">${escapeHTML(t.title)}</div>
+        <div class="meta">${due}${assignees}${convoLink}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- Quick-add wiring ----------------------------------------------
+const input = document.getElementById("quickadd");
+const preview = document.getElementById("preview");
+
+function renderPreview() {
+  const v = input.value;
+  if (!v.trim()) {
+    preview.innerHTML = `<span style="color: var(--text-muted)">Type a shortcut, hit ⏎ to add.</span>
+      <button class="help-toggle" id="helpToggle" type="button">help</button>`;
+    bindHelpToggle();
+    return;
+  }
+  const p = parseShortcut(v, { users: state.users });
+  const chips = [];
+  const title = p.title || state.convoSubject || "(untitled)";
+  chips.push(`<span class="chip">${escapeHTML(title)}</span>`);
+  if (p.dueLabel) chips.push(`<span class="chip due">${escapeHTML(p.dueLabel)}</span>`);
+  for (const a of p.assignees) chips.push(`<span class="chip user">@${escapeHTML(a.name.split(" ")[0])}</span>`);
+  if (p.priority) chips.push(`<span class="chip ${p.priority}">${p.priority}</span>`);
+  for (const u of p.unknownMentions) chips.push(`<span class="chip warn">unknown @${escapeHTML(u)}</span>`);
+  preview.innerHTML = chips.join("");
+}
+
+input.addEventListener("input", renderPreview);
+input.addEventListener("keydown", async (e) => {
+  if (e.key === "Enter" && input.value.trim()) {
+    e.preventDefault();
+    const parsed = parseShortcut(input.value, { users: state.users });
+    input.value = "";
+    renderPreview();
+    try {
+      await createTask(parsed, state.convoSubject);
+      toast("Task added");
+    } catch (err) {
+      toast("Failed: " + err.message);
+    }
+  }
+});
+
+document.getElementById("tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-tab]");
+  if (!btn) return;
+  state.activeTab = btn.dataset.tab;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b === btn));
+  render();
+});
+
+function bindHelpToggle() {
+  const t = document.getElementById("helpToggle");
+  if (t) t.addEventListener("click", () => {
+    const p = document.getElementById("helpPanel");
+    p.hidden = !p.hidden;
+  });
+}
+bindHelpToggle();
+
+// ---------- Toast ----------------------------------------------------------
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+// ---------- Boot -----------------------------------------------------------
+(async function main() {
+  await bootMissive();
+  await loadTasks();
+  // Refresh tasks every 60s to pick up changes from comment-box shortcuts and
+  // teammates working in parallel.
+  setInterval(loadTasks, 60000);
+})();
+</script>
+</body>
+</html>
