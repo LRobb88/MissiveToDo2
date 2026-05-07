@@ -558,15 +558,17 @@ async function api(path, opts = {}) {
 }
 
 async function loadTasks() {
-  if (!API_BASE) return;
+  const list = document.getElementById("list");
+  if (!API_BASE) {
+    list.innerHTML = `<div class="empty" style="color:var(--danger)">Missing ?api= in URL</div>`;
+    return;
+  }
   try {
-    // Pull both open and closed; the UI filters per-tab. Archive needs the
-    // closed ones, everything else needs the open ones.
     const r = await api("/api/tasks?assignee=me&status=any");
     state.tasks = r.tasks || [];
     render();
   } catch (e) {
-    toast("Couldn't load tasks: " + e.message);
+    list.innerHTML = `<div class="empty" style="color:var(--danger);word-break:break-all">Error: ${escapeHTML(e.message)}</div>`;
   }
 }
 
